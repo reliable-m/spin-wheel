@@ -1,6 +1,6 @@
 (function() {
   // ----- jsonblob.com configuration -----
-  const BLOB_URL = "https://jsonblob.com/api/jsonblob/https://jsonblob.com/019ca064-ca50-754b-94cb-42fe8f8b77d2";  // <-- PASTE YOUR BLOB URL
+  const BLOB_URL = "https://jsonblob.com/019ca071-7271-7255-9aed-50402382d337";  // <-- PASTE YOUR BLOB URL
 
   // ----- constants -----
   const originalNames = ["Tshepo", "Phindile", "Lelo", "Reliable", "Chichi", "Zandile", "Ntando"];
@@ -30,12 +30,16 @@
     remainingSpan.innerText = `${remainingNames.length} remaining`;
   }
 
-  // ----- load initial state from jsonblob.com -----
+  // ----- load state from jsonblob.com -----
   async function loadState() {
+    console.log("Loading state from:", BLOB_URL);
     try {
       const response = await fetch(BLOB_URL);
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status} - ${response.statusText}`);
+      }
       const data = await response.json();
+      console.log("Loaded data:", data);
       remainingNames = data.remainingNames || [];
       lastWinner = data.lastWinner || null;
 
@@ -55,10 +59,11 @@
     }
   }
 
-  // ----- save state to jsonblob.com (PUT request) -----
+  // ----- save state to jsonblob.com -----
   async function saveState() {
+    console.log("Saving state:", { remainingNames, lastWinner });
     try {
-      await fetch(BLOB_URL, {
+      const response = await fetch(BLOB_URL, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -66,6 +71,13 @@
           lastWinner: lastWinner
         })
       });
+      if (!response.ok) {
+        console.error("Save failed with status:", response.status);
+        const text = await response.text();
+        console.error("Response body:", text);
+      } else {
+        console.log("Save successful");
+      }
     } catch (error) {
       console.error("Failed to save state:", error);
     }
@@ -106,6 +118,9 @@
           const data = await response.json();
           remainingNames = data.remainingNames || [];
           lastWinner = data.lastWinner || null;
+          console.log("Refreshed state before spin:", { remainingNames, lastWinner });
+        } else {
+          console.warn("Could not refresh, status:", response.status);
         }
       } catch (error) {
         console.warn("Could not refresh state, using local copy");
@@ -113,6 +128,7 @@
 
       // If no names left, reset
       if (remainingNames.length === 0) {
+        console.log("No names left, resetting list");
         remainingNames = shuffleArray([...originalNames]);
       }
 
@@ -120,6 +136,7 @@
       const randomIndex = Math.floor(Math.random() * remainingNames.length);
       const winner = remainingNames.splice(randomIndex, 1)[0];
       lastWinner = winner;
+      console.log("New winner:", winner);
 
       // Save to jsonblob.com
       await saveState();
@@ -147,8 +164,9 @@
 
   // ----- reset (double‑click anywhere) -----
   document.addEventListener('dblclick', async function() {
+    console.log("Double-click detected, resetting list");
     resetLocalList();
-    await saveState(); // push reset to server
+    await saveState();
     wheelDisplay.innerText = '🎰';
     resultDiv.innerText = '';
     updateRemainingDisplay();
