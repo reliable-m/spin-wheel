@@ -1,6 +1,6 @@
 (function() {
   // ----- jsonblob.com configuration -----
-  const BLOB_URL = "https://jsonblob.com/019ca04d-3f6a-7ba5-8d53-51f40300a0aa";  // <-- YOUR BLOB URL
+  const BLOB_URL = "https://jsonblob.com/api/jsonblob/https://jsonblob.com/019ca064-ca50-754b-94cb-42fe8f8b77d2";  // <-- PASTE YOUR BLOB URL
 
   // ----- constants -----
   const originalNames = ["Tshepo", "Phindile", "Lelo", "Reliable", "Chichi", "Zandile", "Ntando"];
