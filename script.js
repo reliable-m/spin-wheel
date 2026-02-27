@@ -1,5 +1,7 @@
+import { getDatabase, ref, set, onValue, runTransaction } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js';
+
 (function() {
-  // ----- constants & state -----
+  // ----- constants -----
   const originalNames = ["Tshepo", "Phindile", "Lelo", "Reliable", "Chichi", "Zandile", "Ntando"];
   let remainingNames = [];
   let lastWinner = null;
@@ -14,33 +16,35 @@
   const wheel = document.getElementById("wheel");
   const remainingSpan = document.getElementById("remainingCounter");
 
-  const STORAGE_KEY = 'vibecodeSpinState';
+  // ----- Firebase reference -----
+  const db = window.firebaseDatabase;  // set in index.html
+  const stateRef = ref(db, 'spinState');
 
-  // persistence helpers
-  function saveState() {
-    const state = {
-      remainingNames: remainingNames,
-      lastWinner: lastWinner
-    };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  }
-
-  function loadState() {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      try {
-        const state = JSON.parse(saved);
-        remainingNames = state.remainingNames || [];
-        lastWinner = state.lastWinner || null;
-      } catch (e) {
-        resetList();
-      }
+  // ----- load initial state & listen for changes -----
+  onValue(stateRef, (snapshot) => {
+    const data = snapshot.val();
+    if (data) {
+      remainingNames = data.remainingNames || [];
+      lastWinner = data.lastWinner || null;
     } else {
-      resetList();
+      // First visit – initialize with shuffled list
+      const shuffled = shuffleArray([...originalNames]);
+      set(stateRef, { remainingNames: shuffled, lastWinner: null });
+      return;
     }
-  }
 
-  // array helpers
+    // Update UI
+    if (lastWinner) {
+      wheelDisplay.innerText = lastWinner;
+      resultDiv.innerText = `${lastWinner} You won the previous draw, thank you for your services. Time for a new winner`;
+    } else {
+      wheelDisplay.innerText = '🎰';
+      resultDiv.innerText = '';
+    }
+    updateRemainingDisplay();
+  });
+
+  // ----- helpers -----
   function shuffleArray(arr) {
     for (let i = arr.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
@@ -49,62 +53,13 @@
     return arr;
   }
 
-  function resetList() {
-    remainingNames = [...originalNames];
-    remainingNames = shuffleArray(remainingNames);
-    lastWinner = null;
-    saveState();
-  }
-
   function updateRemainingDisplay() {
     remainingSpan.innerText = `${remainingNames.length} remaining`;
   }
 
-  // spin logic
-  function stopSpinAndPickWinner() {
-    if (spinInterval) {
-      clearInterval(spinInterval);
-      spinInterval = null;
-    }
-    if (spinTimeout) {
-      clearTimeout(spinTimeout);
-      spinTimeout = null;
-    }
-    wheel.classList.remove("spin-animation");
-
-    if (remainingNames.length === 0) {
-      resetList();
-    }
-
-    const randomIndex = Math.floor(Math.random() * remainingNames.length);
-    const winner = remainingNames.splice(randomIndex, 1)[0];
-    lastWinner = winner;
-    saveState();
-
-    wheelDisplay.innerText = winner;
-    resultDiv.innerText = `Congradulations🥳🥳 ${winner} you are giving us our next project`;
-    resultDiv.classList.add("winner-animation");
-    setTimeout(() => resultDiv.classList.remove("winner-animation"), 600);
-
-    // confetti celebration
-    confetti({
-      particleCount: 150,
-      spread: 80,
-      origin: { y: 0.6 },
-      startVelocity: 25,
-      colors: ['#f6e05e', '#fbbf24', '#f59e0b', '#ff6b6b', '#48dbfb', '#1dd1a1']
-    });
-
-    updateRemainingDisplay();
-    isSpinning = false;
-    spinBtn.disabled = false;
-  }
-
+  // ----- spin logic using Firebase transaction -----
   function initiateSpin() {
     if (isSpinning) return;
-
-    if (spinInterval) clearInterval(spinInterval);
-    if (spinTimeout) clearTimeout(spinTimeout);
 
     isSpinning = true;
     spinBtn.disabled = true;
@@ -114,44 +69,64 @@
 
     wheel.classList.add("spin-animation");
 
+    // flicker random names
     spinInterval = setInterval(() => {
       const randomName = originalNames[Math.floor(Math.random() * originalNames.length)];
       wheelDisplay.innerText = randomName;
     }, 60);
 
     spinTimeout = setTimeout(() => {
-      stopSpinAndPickWinner();
+      clearInterval(spinInterval);
+      wheel.classList.remove("spin-animation");
+
+      // Atomically update the database
+      runTransaction(stateRef, (currentData) => {
+        if (currentData === null) {
+          return {
+            remainingNames: shuffleArray([...originalNames]),
+            lastWinner: null
+          };
+        }
+        let { remainingNames, lastWinner } = currentData;
+        if (!remainingNames || remainingNames.length === 0) {
+          remainingNames = shuffleArray([...originalNames]);
+        }
+        const randomIndex = Math.floor(Math.random() * remainingNames.length);
+        const winner = remainingNames.splice(randomIndex, 1)[0];
+        lastWinner = winner;
+        return { remainingNames, lastWinner };
+      }).then((result) => {
+        if (result.committed) {
+          confetti({
+            particleCount: 150,
+            spread: 80,
+            origin: { y: 0.6 },
+            startVelocity: 25,
+            colors: ['#f6e05e', '#fbbf24', '#f59e0b', '#ff6b6b', '#48dbfb', '#1dd1a1']
+          });
+        }
+      }).catch((error) => {
+        console.error('Transaction failed:', error);
+      }).finally(() => {
+        isSpinning = false;
+        spinBtn.disabled = false;
+      });
     }, 2000);
   }
 
-  // initial load
-  loadState();
-
-  if (lastWinner) {
-    wheelDisplay.innerText = lastWinner;
-    resultDiv.innerText = `${lastWinner} You won the previous draw, thank you for your services. Time for a new winner`;
-  } else {
-    wheelDisplay.innerText = '🎰';
-    resultDiv.innerText = '';
-  }
-  updateRemainingDisplay();
-
-  // event listeners 
+  // ----- event listeners -----
   spinBtn.addEventListener('click', initiateSpin);
 
-  // double‑click anywhere to reset (fun hidden feature)
+  // double‑click anywhere to reset the global list
   document.addEventListener('dblclick', function() {
-    resetList();
-    updateRemainingDisplay();
-    wheelDisplay.innerText = '🎰';
-    resultDiv.innerText = '';
-    if (spinInterval || spinTimeout) {
-      clearInterval(spinInterval);
-      clearTimeout(spinTimeout);
-      wheel.classList.remove("spin-animation");
-      isSpinning = false;
-      spinBtn.disabled = false;
-    }
+    const shuffled = shuffleArray([...originalNames]);
+    set(stateRef, { remainingNames: shuffled, lastWinner: null });
+    // stop any ongoing spin
+    if (spinInterval) clearInterval(spinInterval);
+    if (spinTimeout) clearTimeout(spinTimeout);
+    wheel.classList.remove("spin-animation");
+    isSpinning = false;
+    spinBtn.disabled = false;
     confetti({ particleCount: 50, spread: 40, origin: { y: 0.5 } });
   });
 })();
