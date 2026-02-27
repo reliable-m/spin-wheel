@@ -2,26 +2,16 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>GXG Spin · Global</title>
   <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800&family=Poppins:wght@400;600&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1"></script>
-  <!-- Import map for Firebase modular SDK -->
-  <script type="importmap">
-    {
-      "imports": {
-        "firebase/app": "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js",
-        "firebase/database": "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js"
-      }
-    }
-  </script>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <div class="card">
-    <h1>⚡ GXG SPIN ⚡</h1>
+    <h1>⚡ CODE-SPIN ⚡</h1>
     <div class="remaining-badge" id="remainingCounter">7 remaining</div>
-
     <div class="wheel-container">
       <div class="wheel" id="wheel">
         <div class="wheel-inner">
@@ -29,36 +19,10 @@
         </div>
       </div>
     </div>
-
     <button class="spin-btn" id="spinButton">SPIN</button>
     <div id="result"></div>
-    <div class="footer-note">🔥 every spin is global · feel the heat 🔥</div>
+    <div class="footer-note">🔥 lets have fun ladies 🔥</div>
   </div>
-
-  <!-- Firebase initialization with YOUR config -->
-  <script type="module">
-    import { initializeApp } from 'firebase/app';
-    import { getDatabase } from 'firebase/database';
-
-    // 🔥 YOUR FIREBASE CONFIG (copied from console)
-    const firebaseConfig = {
-      apiKey: "AIzaSyAjmOIu9pj4HNK2pcTulNactFQrmqLF5s0",
-      authDomain: "spin-app-9fe7a.firebaseapp.com",
-      databaseURL: "https://spin-app-9fe7a-default-rtdb.firebaseio.com", // <-- ADDED
-      projectId: "spin-app-9fe7a",
-      storageBucket: "spin-app-9fe7a.firebasestorage.app",
-      messagingSenderId: "815100999200",
-      appId: "1:815100999200:web:bb9c0770a37eb68eb1ee45",
-      measurementId: "G-DWH4ZYFZ13"
-    };
-
-    const app = initializeApp(firebaseConfig);
-    const database = getDatabase(app);
-    
-    // Expose database globally for script.js
-    window.firebaseDatabase = database;
-  </script>
-
   <script src="script.js"></script>
 </body>
 </html>

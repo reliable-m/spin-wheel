@@ -1,6 +1,7 @@
-import { getDatabase, ref, set, onValue, runTransaction } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js';
-
 (function() {
+  // ----- jsonblob.com configuration -----
+  const BLOB_URL = "https://jsonblob.com/019ca04d-3f6a-7ba5-8d53-51f40300a0aa";  // <-- YOUR BLOB URL
+
   // ----- constants -----
   const originalNames = ["Tshepo", "Phindile", "Lelo", "Reliable", "Chichi", "Zandile", "Ntando"];
   let remainingNames = [];
@@ -16,34 +17,6 @@ import { getDatabase, ref, set, onValue, runTransaction } from 'https://www.gsta
   const wheel = document.getElementById("wheel");
   const remainingSpan = document.getElementById("remainingCounter");
 
-  // ----- Firebase reference -----
-  const db = window.firebaseDatabase;  // set in index.html
-  const stateRef = ref(db, 'spinState');
-
-  // ----- load initial state & listen for changes -----
-  onValue(stateRef, (snapshot) => {
-    const data = snapshot.val();
-    if (data) {
-      remainingNames = data.remainingNames || [];
-      lastWinner = data.lastWinner || null;
-    } else {
-      // First visit – initialize with shuffled list
-      const shuffled = shuffleArray([...originalNames]);
-      set(stateRef, { remainingNames: shuffled, lastWinner: null });
-      return;
-    }
-
-    // Update UI
-    if (lastWinner) {
-      wheelDisplay.innerText = lastWinner;
-      resultDiv.innerText = `${lastWinner} You won the previous draw, thank you for your services. Time for a new winner`;
-    } else {
-      wheelDisplay.innerText = '🎰';
-      resultDiv.innerText = '';
-    }
-    updateRemainingDisplay();
-  });
-
   // ----- helpers -----
   function shuffleArray(arr) {
     for (let i = arr.length - 1; i > 0; i--) {
@@ -57,8 +30,55 @@ import { getDatabase, ref, set, onValue, runTransaction } from 'https://www.gsta
     remainingSpan.innerText = `${remainingNames.length} remaining`;
   }
 
-  // ----- spin logic using Firebase transaction -----
-  function initiateSpin() {
+  // ----- load initial state from jsonblob.com -----
+  async function loadState() {
+    try {
+      const response = await fetch(BLOB_URL);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json();
+      remainingNames = data.remainingNames || [];
+      lastWinner = data.lastWinner || null;
+
+      if (lastWinner) {
+        wheelDisplay.innerText = lastWinner;
+        resultDiv.innerText = `${lastWinner} You won the previous draw, thank you for your services. Time for a new winner`;
+      } else {
+        wheelDisplay.innerText = '🎰';
+        resultDiv.innerText = '';
+      }
+      updateRemainingDisplay();
+    } catch (error) {
+      console.error("Failed to load state:", error);
+      // fallback to local reset
+      resetLocalList();
+      updateRemainingDisplay();
+    }
+  }
+
+  // ----- save state to jsonblob.com (PUT request) -----
+  async function saveState() {
+    try {
+      await fetch(BLOB_URL, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          remainingNames: remainingNames,
+          lastWinner: lastWinner
+        })
+      });
+    } catch (error) {
+      console.error("Failed to save state:", error);
+    }
+  }
+
+  // ----- reset list (local helper) -----
+  function resetLocalList() {
+    remainingNames = shuffleArray([...originalNames]);
+    lastWinner = null;
+  }
+
+  // ----- spin logic -----
+  async function initiateSpin() {
     if (isSpinning) return;
 
     isSpinning = true;
@@ -75,53 +95,63 @@ import { getDatabase, ref, set, onValue, runTransaction } from 'https://www.gsta
       wheelDisplay.innerText = randomName;
     }, 60);
 
-    spinTimeout = setTimeout(() => {
+    spinTimeout = setTimeout(async () => {
       clearInterval(spinInterval);
       wheel.classList.remove("spin-animation");
 
-      // Atomically update the database
-      runTransaction(stateRef, (currentData) => {
-        if (currentData === null) {
-          return {
-            remainingNames: shuffleArray([...originalNames]),
-            lastWinner: null
-          };
+      // Refresh state from server (in case someone else spun)
+      try {
+        const response = await fetch(BLOB_URL);
+        if (response.ok) {
+          const data = await response.json();
+          remainingNames = data.remainingNames || [];
+          lastWinner = data.lastWinner || null;
         }
-        let { remainingNames, lastWinner } = currentData;
-        if (!remainingNames || remainingNames.length === 0) {
-          remainingNames = shuffleArray([...originalNames]);
-        }
-        const randomIndex = Math.floor(Math.random() * remainingNames.length);
-        const winner = remainingNames.splice(randomIndex, 1)[0];
-        lastWinner = winner;
-        return { remainingNames, lastWinner };
-      }).then((result) => {
-        if (result.committed) {
-          confetti({
-            particleCount: 150,
-            spread: 80,
-            origin: { y: 0.6 },
-            startVelocity: 25,
-            colors: ['#f6e05e', '#fbbf24', '#f59e0b', '#ff6b6b', '#48dbfb', '#1dd1a1']
-          });
-        }
-      }).catch((error) => {
-        console.error('Transaction failed:', error);
-      }).finally(() => {
-        isSpinning = false;
-        spinBtn.disabled = false;
+      } catch (error) {
+        console.warn("Could not refresh state, using local copy");
+      }
+
+      // If no names left, reset
+      if (remainingNames.length === 0) {
+        remainingNames = shuffleArray([...originalNames]);
+      }
+
+      // Pick a winner
+      const randomIndex = Math.floor(Math.random() * remainingNames.length);
+      const winner = remainingNames.splice(randomIndex, 1)[0];
+      lastWinner = winner;
+
+      // Save to jsonblob.com
+      await saveState();
+
+      // Update UI
+      wheelDisplay.innerText = winner;
+      resultDiv.innerText = `Congratulations 🥳🥳 ${winner} you are giving us our next project`;
+      resultDiv.classList.add("winner-animation");
+      setTimeout(() => resultDiv.classList.remove("winner-animation"), 600);
+
+      // Confetti
+      confetti({
+        particleCount: 150,
+        spread: 80,
+        origin: { y: 0.6 },
+        startVelocity: 25,
+        colors: ['#f6e05e', '#fbbf24', '#f59e0b', '#ff6b6b', '#48dbfb', '#1dd1a1']
       });
+
+      updateRemainingDisplay();
+      isSpinning = false;
+      spinBtn.disabled = false;
     }, 2000);
   }
 
-  // ----- event listeners -----
-  spinBtn.addEventListener('click', initiateSpin);
-
-  // double‑click anywhere to reset the global list
-  document.addEventListener('dblclick', function() {
-    const shuffled = shuffleArray([...originalNames]);
-    set(stateRef, { remainingNames: shuffled, lastWinner: null });
-    // stop any ongoing spin
+  // ----- reset (double‑click anywhere) -----
+  document.addEventListener('dblclick', async function() {
+    resetLocalList();
+    await saveState(); // push reset to server
+    wheelDisplay.innerText = '🎰';
+    resultDiv.innerText = '';
+    updateRemainingDisplay();
     if (spinInterval) clearInterval(spinInterval);
     if (spinTimeout) clearTimeout(spinTimeout);
     wheel.classList.remove("spin-animation");
@@ -129,4 +159,10 @@ import { getDatabase, ref, set, onValue, runTransaction } from 'https://www.gsta
     spinBtn.disabled = false;
     confetti({ particleCount: 50, spread: 40, origin: { y: 0.5 } });
   });
+
+  // ----- initial load -----
+  loadState();
+
+  // ----- event listener for spin button -----
+  spinBtn.addEventListener('click', initiateSpin);
 })();
